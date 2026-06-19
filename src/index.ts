@@ -20,13 +20,35 @@ const info = [
   "",
 ].join("\n");
 
+// Permissive CORS so a browser-based client (e.g. `expo start --web`, served
+// from a different origin/port) can call this API. Native apps (Expo Go on a
+// phone/simulator) don't enforce CORS, so this is only needed for web dev.
+const CORS_HEADERS: Record<string, string> = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type",
+};
+
+function withCors(res: Response): Response {
+  for (const [key, value] of Object.entries(CORS_HEADERS))
+    res.headers.set(key, value);
+  return res;
+}
+
 const server = Bun.serve({
   // hostname defaults to 0.0.0.0 so physical devices on your LAN can reach it.
   port: 3001,
-  routes: {
-    "/api/*": (req) => apiHandler(req),
-    "/*": () =>
+  async fetch(req) {
+    // Answer CORS preflight requests before they hit the API routes.
+    if (req.method === "OPTIONS")
+      return new Response(null, { status: 204, headers: CORS_HEADERS });
+
+    const url = new URL(req.url);
+    if (url.pathname.startsWith("/api/")) return withCors(await apiHandler(req));
+
+    return withCors(
       new Response(info, { headers: { "content-type": "text/plain" } }),
+    );
   },
 
   development: process.env.NODE_ENV !== "production" && {
